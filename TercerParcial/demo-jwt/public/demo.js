@@ -25,7 +25,8 @@ async function llamar(metodo, url, cuerpo) {
 }
 
 // textContent y no innerHTML porque el JSON trae nombres escritos por personas: con innerHTML se interpretarían
-// como HTML y un script metido ahí podría robar la cookie si no fuera httpOnly. prepend + <ol reversed>: lo nuevo arriba.
+// como HTML y un script metido ahí podría robar la cookie si no fuera httpOnly. append y un <ol> normal: la
+// primera respuesta queda como 1 arriba y las siguientes van saliendo abajo, en orden.
 function anotar(metodo, url, status, datos) {
   const li = document.createElement('li');
 
@@ -42,7 +43,11 @@ function anotar(metodo, url, status, datos) {
   cuerpo.textContent = datos === null ? '(sin JSON)' : JSON.stringify(datos, null, 2);
 
   li.append(codigo, titulo, cuerpo);
-  $('bitacora').prepend(li);
+
+  // La lista tiene altura máxima: al agregar abajo se baja el scroll para que la nueva se vea sin mover la página.
+  const bitacora = $('bitacora');
+  bitacora.append(li);
+  bitacora.scrollTop = bitacora.scrollHeight;
 }
 
 // Se le pregunta al servidor porque la cookie es httpOnly: el navegador la manda sola, pero document.cookie sale
