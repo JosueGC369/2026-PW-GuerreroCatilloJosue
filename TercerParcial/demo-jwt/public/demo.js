@@ -205,20 +205,6 @@ $('btn-jwt-crear').addEventListener('click', async () => {
   await listarTokens();
 });
 
-// Estos dos mandan el token que está en la caja. Si está vencido o revocado, el 401 lo decide
-// el servidor y la página no puede arreglarlo: hay que crear otro token.
-$('btn-jwt-perfil').addEventListener('click', async () => {
-  const { status, datos } = await llamarJWT('GET', '/api/jwt/perfil', $('jwt-token').value.trim());
-  anotar('GET', '/api/jwt/perfil', status, datos);
-  pintarRespuestaJWT(datos);
-});
-
-$('btn-jwt-admin').addEventListener('click', async () => {
-  const { status, datos } = await llamarJWT('GET', '/api/jwt/admin/reporte', $('jwt-token').value.trim());
-  anotar('GET', '/api/jwt/admin/reporte', status, datos);
-  pintarRespuestaJWT(datos);
-});
-
 // Renovar no estira el mismo token: el servidor revoca el actual y firma otro con distinto jti
 // y distinto vencimiento, para que el viejo ya no sirva.
 $('btn-jwt-renovar').addEventListener('click', async () => {
