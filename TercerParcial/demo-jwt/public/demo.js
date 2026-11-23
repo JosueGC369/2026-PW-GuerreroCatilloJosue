@@ -100,11 +100,20 @@ async function refrescarSesiones() {
   }
 }
 
+// La configuración también se vuelve a pedir: "Volver a preguntar" refresca toda la página, no solo el estado.
+async function refrescarConfig() {
+  const { datos } = await llamar('GET', '/api/config');
+  $('config').textContent = datos === null ? '(no disponible)' : JSON.stringify(datos, null, 2);
+}
+
 // Casi toda acción cambia el estado y la tabla (login, logout, visita): se piden juntas para que ninguna quede
-// mostrando datos viejos.
+// mostrando datos viejos. La tarjeta 6 va incluida para que el token vencido o revocado se note solo.
 async function refrescarTodo() {
   await refrescarEstado();
   await refrescarSesiones();
+  await refrescarConfig();
+  await refrescarToken();
+  await listarTokens();
 }
 
 // change y no input: solo interesa cuando ya se eligió otro usuario, para poner su contraseña <usuario>12345.
@@ -188,6 +197,29 @@ function pintarRespuestaJWT(datos) {
   $('jwt-respuesta').textContent = datos === null ? '(sin JSON)' : JSON.stringify(datos, null, 2);
 }
 
+// El token no se puede leer como la cookie: se manda al servidor y él contesta si todavía sirve.
+// Con esto la tarjeta 6 se actualiza sola y el contador de segundos baja en vivo.
+async function refrescarToken() {
+  const token = $('jwt-token').value.trim();
+  const estado = $('jwt-estado');
+
+  if (!token) {
+    estado.textContent = 'Sin token';
+    estado.className = 'estado sin-sesion';
+    return;
+  }
+
+  const { status, datos } = await llamarJWT('GET', '/api/jwt/perfil', token);
+
+  if (status === 200) {
+    estado.textContent = `Con token · ${datos.mensaje} · vence en ${datos.expiraEnSegundos} s`;
+    estado.className = 'estado con-sesion';
+  } else {
+    estado.textContent = `El token ya no sirve (${status})`;
+    estado.className = 'estado sin-sesion';
+  }
+}
+
 // Crear token es el mismo login, pero el servidor devuelve un token en vez de una cookie.
 // Si sale bien, el token queda en la caja listo para los demás botones.
 $('btn-jwt-crear').addEventListener('click', async () => {
@@ -262,3 +294,7 @@ async function listarTokens() {
 $('btn-jwt-lista').addEventListener('click', listarTokens);
 
 listarTokens();
+
+// Cada 3 segundos se vuelve a preguntar todo, igual que el botón: los contadores ("vence en N s")
+// bajan solos y las tablas cambian sin pulsar nada. El botón sigue ahí para forzarlo al instante.
+setInterval(refrescarTodo, 3000);
