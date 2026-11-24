@@ -4,6 +4,19 @@ const $ = (id) => document.getElementById(id);
 // Una sola función porque los ocho endpoints comparten contrato: JSON que entra, JSON que sale y un código HTTP.
 // El código se lee en respuesta.status (fetch no falla con 401 ni 403), sin credentials porque es el mismo origen,
 // y si la respuesta no es JSON se atrapa el error para que datos quede en null y la página no truene.
+// Si una petición se queda colgada (Wi-Fi lento, servidor ocupado), a los 6 segundos se cancela.
+// Sin esto, una petición trabada deja la página esperando y los botones parecen no hacer nada.
+async function pedir(url, opciones) {
+  const control = new AbortController();
+  const reloj = setTimeout(() => control.abort(), 6000);
+
+  try {
+    return await fetch(url, { ...opciones, signal: control.signal });
+  } finally {
+    clearTimeout(reloj);
+  }
+}
+
 async function llamar(metodo, url, cuerpo) {
   const opciones = { method: metodo, headers: {} };
 
@@ -12,7 +25,13 @@ async function llamar(metodo, url, cuerpo) {
     opciones.body = JSON.stringify(cuerpo);
   }
 
-  const respuesta = await fetch(url, opciones);
+  let respuesta;
+  try {
+    respuesta = await pedir(url, opciones);
+  } catch {
+    // status 0 = no hubo respuesta del servidor (sin red, cancelada o servidor apagado).
+    return { status: 0, datos: null };
+  }
 
   let datos = null;
   try {
@@ -30,11 +49,11 @@ async function llamar(metodo, url, cuerpo) {
 function anotar(metodo, url, status, datos) {
   const li = document.createElement('li');
 
-  const clase = status < 300 ? 'ok' : status === 401 ? 'e401' : status === 403 ? 'e403' : 'error';
+  const clase = status === 0 ? 'error' : status < 300 ? 'ok' : status === 401 ? 'e401' : status === 403 ? 'e403' : 'error';
 
   const codigo = document.createElement('span');
   codigo.className = `codigo ${clase}`;
-  codigo.textContent = String(status);
+  codigo.textContent = status === 0 ? '—' : String(status);
 
   const titulo = document.createElement('code');
   titulo.textContent = ` ${metodo} ${url}`;
@@ -59,6 +78,9 @@ async function refrescarEstado() {
   if (status === 200) {
     estado.textContent = `${datos.usuario.nombre} · rol ${datos.usuario.rol} · sesión ${datos.sesion} · vence en ${datos.expiraEnSegundos} s`;
     estado.className = 'estado con-sesion';
+  } else if (status === 0) {
+    estado.textContent = 'Sin conexión con el servidor';
+    estado.className = 'estado sin-sesion';
   } else {
     estado.textContent = 'Sin sesión (el servidor responde 401)';
     estado.className = 'estado sin-sesion';
@@ -113,12 +135,23 @@ async function refrescarConfig() {
 
 // Casi toda acción cambia el estado y la tabla (login, logout, visita): se piden juntas para que ninguna quede
 // mostrando datos viejos. La tarjeta 6 va incluida para que el token vencido o revocado se note solo.
+let refrescando = false;
+
 async function refrescarTodo() {
-  await refrescarEstado();
-  await refrescarSesiones();
-  await refrescarConfig();
-  await refrescarToken();
-  await listarTokens();
+  // Si la vuelta anterior no ha terminado (red lenta), esta se salta: si no, las peticiones se
+  // encimarían hasta agotar las conexiones del navegador y los botones dejarían de responder.
+  if (refrescando) return;
+  refrescando = true;
+
+  try {
+    await refrescarEstado();
+    await refrescarSesiones();
+    await refrescarConfig();
+    await refrescarToken();
+    await listarTokens();
+  } finally {
+    refrescando = false;
+  }
 }
 
 // change y no input: solo interesa cuando ya se eligió otro usuario, para poner su contraseña <usuario>12345.
@@ -170,7 +203,12 @@ async function llamarJWT(metodo, url, token, cuerpo) {
     opciones.body = JSON.stringify(cuerpo);
   }
 
-  const respuesta = await fetch(url, opciones);
+  let respuesta;
+  try {
+    respuesta = await pedir(url, opciones);
+  } catch {
+    return { status: 0, datos: null };
+  }
 
   let datos = null;
   try {
@@ -219,6 +257,9 @@ async function refrescarToken() {
   if (status === 200) {
     estado.textContent = `Con token · ${datos.mensaje} · vence en ${datos.expiraEnSegundos} s`;
     estado.className = 'estado con-sesion';
+  } else if (status === 0) {
+    estado.textContent = 'Sin conexión con el servidor';
+    estado.className = 'estado sin-sesion';
   } else {
     estado.textContent = `El token ya no sirve (${status})`;
     estado.className = 'estado sin-sesion';
@@ -275,7 +316,7 @@ async function listarTokens() {
     const fila = document.createElement('tr');
     const celda = document.createElement('td');
     celda.colSpan = 4;
-    celda.textContent = '(sin tokens revocados)';
+    celda.textContent = datos === null ? '(sin conexión con el servidor)' : '(sin tokens revocados)';
     fila.append(celda);
     cuerpo.append(fila);
     return;
@@ -315,6 +356,9 @@ async function crearTokenAlEntrar() {
 listarTokens();
 crearTokenAlEntrar();
 
-// Cada 3 segundos se vuelve a preguntar todo, igual que el botón: los contadores ("vence en N s")
-// bajan solos y las tablas cambian sin pulsar nada. El botón sigue ahí para forzarlo al instante.
-setInterval(refrescarTodo, 3000);
+// Cada 5 segundos se vuelve a preguntar todo, igual que el botón: los contadores ("vence en N s")
+// bajan solos y las tablas cambian sin pulsar nada. No se refresca si la pestaña está oculta,
+// y el botón sigue ahí para forzarlo al instante.
+setInterval(() => {
+  if (!document.hidden) refrescarTodo();
+}, 5000);
