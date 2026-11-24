@@ -298,7 +298,22 @@ async function listarTokens() {
 
 $('btn-jwt-lista').addEventListener('click', listarTokens);
 
+// Al entrar a la página no hay token y la tarjeta 6 saldría vacía. Se pide uno con el usuario del
+// formulario para que el visitante lo vea desde el primer momento y pueda renovarlo o revocarlo.
+async function crearTokenAlEntrar() {
+  if ($('jwt-token').value.trim()) return;
+
+  const cuerpo = { usuario: $('usuario').value, contrasena: $('contrasena').value };
+  const { status, datos } = await llamarJWT('POST', '/api/jwt/login', null, cuerpo);
+
+  if (status === 200 && datos && datos.token) {
+    pintarToken(datos.token);
+    pintarRespuestaJWT(datos);
+  }
+}
+
 listarTokens();
+crearTokenAlEntrar();
 
 // Cada 3 segundos se vuelve a preguntar todo, igual que el botón: los contadores ("vence en N s")
 // bajan solos y las tablas cambian sin pulsar nada. El botón sigue ahí para forzarlo al instante.
